@@ -466,16 +466,6 @@ if auto_refresh:
     import time
     st.cache_data.clear()
 
-# ── DEBUG (remove after fixing) ───────────────────────────────────────────────
-with st.expander("🔧 Debug info"):
-    st.code(f"AQICN_TOKEN = '{AQICN_TOKEN[:6]}...' (len={len(AQICN_TOKEN)})")
-    st.code(f"live source = {live['source']}")
-    st.code(f"live station = {live['station']}")
-    if live.get("error"):
-        st.error(f"API error: {live['error']}")
-    if live.get("sid"):
-        st.success(f"Working station ID: {live['sid']}")
-
 # ── HEADER ─────────────────────────────────────────────────────────────────────
 col_h1, col_h2 = st.columns([3, 1])
 with col_h1:
