@@ -1,6 +1,6 @@
 """
-Nepal Air Quality Predictor — Kathmandu AQI Forecasting Dashboard v2
-New in v2: Map view · Email alerts · Hourly heatmap · Dark mode · Accuracy tracker · Weather forecast
+Nepal Air Quality Predictor — Kathmandu AQI Forecasting Dashboard v3
+New in v3: Telegram alerts · Streamlit Cloud deployment
 Tech Stack: Python · Streamlit · Pandas · Plotly · Prophet · AQICN API · Open-Meteo API
 """
 
@@ -11,8 +11,6 @@ import plotly.graph_objects as go
 import plotly.figure_factory as ff
 from datetime import datetime, timedelta
 import requests
-import smtplib
-from email.mime.text import MIMEText
 import json, os, math
 
 # ── Page config ────────────────────────────────────────────────────────────────
@@ -23,12 +21,14 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Tokens (replace with your own) ────────────────────────────────────────────
-AQICN_TOKEN = "demo"        # https://aqicn.org/data-platform/token/
-SMTP_HOST   = ""            # e.g. smtp.gmail.com
-SMTP_PORT   = 587
-SMTP_USER   = ""            # your Gmail address
-SMTP_PASS   = ""            # Gmail App Password (not your login password)
+# ── Tokens — set in .streamlit/secrets.toml locally, or Streamlit Cloud secrets
+def _secret(key, default=""):
+    try:    return st.secrets[key]
+    except: return os.environ.get(key, default)
+
+AQICN_TOKEN    = _secret("AQICN_TOKEN",    "demo")
+TELEGRAM_TOKEN = _secret("TELEGRAM_TOKEN", "")   # from @BotFather
+TELEGRAM_CHAT  = _secret("TELEGRAM_CHAT",  "")   # your numeric chat ID
 
 # ── CSS — full dark/light mode support ────────────────────────────────────────
 st.markdown("""
@@ -355,30 +355,28 @@ def compute_accuracy(hist_df, forecast_df):
     within20 = int(np.mean(np.abs(errors) <= 20) * 100)
     return {"mae": mae, "rmse": rmse, "within20": within20, "actuals": actuals, "predicted": sim_fc}
 
-def send_alert_email(to_addr, aqi, station, threshold, smtp_host, smtp_port, smtp_user, smtp_pass):
+def send_telegram_alert(bot_token, chat_id, aqi, station, threshold):
+    """Send AQI alert via Telegram Bot API."""
     meta = aqi_meta(aqi)
-    body = f"""
-AQI Alert — Kathmandu Air Quality Predictor
-
-Station: {station}
-Current AQI: {aqi} ({meta['label']})
-Your alert threshold: {threshold}
-
-{chr(10).join('• ' + a for a in health_advice(aqi))}
-
-Stay safe,
-Kathmandu AQI Dashboard
-    """.strip()
-    msg = MIMEText(body)
-    msg["Subject"] = f"🚨 AQI Alert: {aqi} ({meta['label']}) at {station}"
-    msg["From"]    = smtp_user
-    msg["To"]      = to_addr
+    advice_lines = "\n".join(f"• {a}" for a in health_advice(aqi))
+    icon = "🟢" if aqi <= 50 else "🟡" if aqi <= 100 else "🟠" if aqi <= 150 else "🔴" if aqi <= 200 else "🟣"
+    text = (
+        f"{icon} *AQI Alert — Kathmandu*\n\n"
+        f"📍 Station: {station}\n"
+        f"💨 AQI: *{aqi}* ({meta['label']})\n"
+        f"⚠️ Your threshold: {threshold}\n\n"
+        f"*Health advice:*\n{advice_lines}\n\n"
+        f"_Stay safe — Nepal AQI Predictor_"
+    )
     try:
-        with smtplib.SMTP(smtp_host, smtp_port) as s:
-            s.starttls()
-            s.login(smtp_user, smtp_pass)
-            s.sendmail(smtp_user, to_addr, msg.as_string())
-        return True, "Email sent successfully!"
+        r = requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
+            timeout=8,
+        )
+        if r.status_code == 200:
+            return True, "✅ Telegram message sent!"
+        return False, f"API error {r.status_code}: {r.text}"
     except Exception as e:
         return False, str(e)
 
@@ -404,18 +402,27 @@ with st.sidebar:
     auto_refresh   = st.toggle("Auto-refresh (hourly)", value=False)
 
     st.markdown("---")
-    st.markdown('<div class="eyebrow">Email Alerts</div>', unsafe_allow_html=True)
-    alert_email    = st.text_input("Alert email address", placeholder="you@example.com")
-    alert_threshold= st.slider("Alert when AQI exceeds", 50, 300, 150, step=25)
+    st.markdown('<div class="eyebrow">Telegram Alerts</div>', unsafe_allow_html=True)
+    alert_threshold = st.slider("Alert when AQI exceeds", 50, 300, 150, step=25)
+    tg_enabled      = bool(TELEGRAM_TOKEN and TELEGRAM_CHAT)
 
-    if st.button("Send Test Alert ↗", disabled=not (alert_email and SMTP_HOST)):
-        ok, msg = send_alert_email(
-            alert_email, 999, station_name, alert_threshold,
-            SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS,
+    if st.button("📨 Send Test Alert", disabled=not tg_enabled):
+        ok, msg = send_telegram_alert(
+            TELEGRAM_TOKEN, TELEGRAM_CHAT, live["aqi"], station_name, alert_threshold
         )
         st.success(msg) if ok else st.error(f"Failed: {msg}")
-    if not SMTP_HOST:
-        st.caption("Set SMTP_HOST/USER/PASS at top of file to enable email alerts.")
+
+    if not tg_enabled:
+        st.caption("Add TELEGRAM_TOKEN and TELEGRAM_CHAT to secrets to enable.")
+        with st.expander("How to set up →"):
+            st.markdown("""
+1. Message [@BotFather](https://t.me/BotFather) on Telegram
+2. Send `/newbot` → follow prompts → copy the token
+3. Message your bot once, then open:
+   `https://api.telegram.org/bot<TOKEN>/getUpdates`
+4. Copy the `chat.id` number
+5. Add both to `.streamlit/secrets.toml`
+            """)
 
     st.markdown("---")
     st.markdown("""
@@ -423,9 +430,10 @@ with st.sidebar:
     AQI data: AQICN API<br>
     Weather: Open-Meteo (free)<br>
     Forecast: Facebook Prophet<br>
+    Alerts: Telegram Bot API<br>
     Refresh: hourly cache<br><br>
-    Set AQICN_TOKEN at line 21<br>
-    <a href='https://aqicn.org/data-platform/token/' target='_blank'>aqicn.org/data-platform/token</a>
+    <a href='https://aqicn.org/data-platform/token/' target='_blank'>Get AQICN token →</a><br>
+    <a href='https://t.me/BotFather' target='_blank'>Create Telegram bot →</a>
     </div>""", unsafe_allow_html=True)
 
 # ── Load data ──────────────────────────────────────────────────────────────────
@@ -443,10 +451,16 @@ if auto_refresh:
     import time
     st.cache_data.clear()
 
+# ── DEBUG (remove after fixing) ───────────────────────────────────────────────
+with st.expander("🔧 Debug info"):
+    st.code(f"AQICN_TOKEN = '{AQICN_TOKEN[:6]}...' (len={len(AQICN_TOKEN)})")
+    st.code(f"live source = {live['source']}")
+    st.code(f"live station = {live['station']}")
+
 # ── HEADER ─────────────────────────────────────────────────────────────────────
 col_h1, col_h2 = st.columns([3, 1])
 with col_h1:
-    st.markdown('<div class="eyebrow">Nepal Air Quality Predictor · v2</div>', unsafe_allow_html=True)
+    st.markdown('<div class="eyebrow">Nepal Air Quality Predictor · v3</div>', unsafe_allow_html=True)
     st.markdown("# Kathmandu AQI Dashboard")
 with col_h2:
     src_note = "🟢 Live" if live["source"] == "live" else "🟡 Simulated"
@@ -498,9 +512,12 @@ p4.markdown(poll_card("O₃",    live["o3"],   "µg/m³", "#639922"), unsafe_all
 p5.markdown(poll_card("CO",    live["co"],   "mg/m³", "#D85A30"), unsafe_allow_html=True)
 
 # ── ALERT BANNER ───────────────────────────────────────────────────────────────
-if alert_email and live["aqi"] > alert_threshold:
-    st.warning(f"⚠️ AQI {live['aqi']} exceeds your threshold of {alert_threshold}. "
-               f"An alert will be sent to {alert_email} if SMTP is configured.")
+if live["aqi"] > alert_threshold:
+    if tg_enabled:
+        send_telegram_alert(TELEGRAM_TOKEN, TELEGRAM_CHAT, live["aqi"], station_name, alert_threshold)
+        st.warning(f"⚠️ AQI {live['aqi']} exceeds your threshold of {alert_threshold}. Telegram alert sent!")
+    else:
+        st.warning(f"⚠️ AQI {live['aqi']} exceeds your threshold of {alert_threshold}. Set up Telegram in the sidebar to receive alerts.")
 
 st.markdown("<hr class='section-divider'>", unsafe_allow_html=True)
 
@@ -843,5 +860,5 @@ st.markdown("<hr class='section-divider'>", unsafe_allow_html=True)
 st.markdown("""
 <div style='font-family:JetBrains Mono,monospace;font-size:10px;opacity:.4;text-align:center;padding:.4rem 0'>
     AQI data · AQICN API &nbsp;·&nbsp; Weather · Open-Meteo &nbsp;·&nbsp;
-    Forecast · Facebook Prophet &nbsp;·&nbsp; Built with Streamlit + Plotly &nbsp;·&nbsp; v2.0
-</div>""", unsafe_allow_html=True) 
+    Forecast · Facebook Prophet &nbsp;·&nbsp; Alerts · Telegram &nbsp;·&nbsp; Built with Streamlit + Plotly &nbsp;·&nbsp; v3.0
+</div>""", unsafe_allow_html=True)
