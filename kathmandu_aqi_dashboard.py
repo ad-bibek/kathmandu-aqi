@@ -237,17 +237,14 @@ STATIONS = {
 @st.cache_data(ttl=3600)
 def fetch_live_aqi(station_id, token=AQICN_TOKEN):
     # Try multiple station IDs in order until one works
-    # Search for Kathmandu stations dynamically
-    try:
-        search_url = f"https://api.waqi.info/search/?token={token}&keyword=kathmandu"
-        sr = requests.get(search_url, timeout=6).json()
-        if sr.get("status") == "ok":
-            found_ids = [f'@{r["uid"]}' for r in sr["data"][:4]]
-            candidates = [station_id] + found_ids
-        else:
-            candidates = [station_id, "@9534", "@9535", "@10217"]
-    except Exception:
-        candidates = [station_id, "@9534", "@9535", "@10217"]
+    # Verified Kathmandu station IDs (US Embassy is most reliable)
+    candidates = [
+        "@7925",    # US Embassy Kathmandu (most reliable)
+        "@9534",    # Ratna Park
+        "@9535",    # Tribhuvan Airport  
+        "@10217",   # Bhaktapur
+        station_id,
+    ]
     last_error = ""
     for sid in candidates:
         try:
