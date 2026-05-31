@@ -844,4 +844,4 @@ st.markdown("""
 <div style='font-family:JetBrains Mono,monospace;font-size:10px;opacity:.4;text-align:center;padding:.4rem 0'>
     AQI data · AQICN API &nbsp;·&nbsp; Weather · Open-Meteo &nbsp;·&nbsp;
     Forecast · Facebook Prophet &nbsp;·&nbsp; Built with Streamlit + Plotly &nbsp;·&nbsp; v2.0
-</div>""", unsafe_allow_html=True)
+</div>""", unsafe_allow_html=True) 
