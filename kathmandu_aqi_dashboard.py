@@ -227,23 +227,24 @@ def health_advice(aqi):
 
 # ── Stations with lat/lon for map ─────────────────────────────────────────────
 STATIONS = {
-    "Ratna Park":        {"id": "kathmandu/ratnapark",           "lat": 27.7089, "lon": 85.3157},
-    "Bhaktapur":         {"id": "nepal/bhaktapur",               "lat": 27.6710, "lon": 85.4298},
-    "Lalitpur (Patan)":  {"id": "nepal/lalitpur",                "lat": 27.6588, "lon": 85.3247},
-    "US Embassy (TIA)":  {"id": "nepal/us-embassy-kathmandu",    "lat": 27.7361, "lon": 85.3408},
+    "Ratna Park":        {"id": "A517780", "lat": 27.7089, "lon": 85.3157},
+    "Kiran Chok":        {"id": "A543136", "lat": 27.7180, "lon": 85.3150},
+    "Kalanki":           {"id": "A348706", "lat": 27.6939, "lon": 85.2803},
+    "US Embassy":        {"id": "H9468",   "lat": 27.7361, "lon": 85.3408},
 }
 
 # ── Data fetching ──────────────────────────────────────────────────────────────
 @st.cache_data(ttl=3600)
 def fetch_live_aqi(station_id, token=AQICN_TOKEN):
     # Try multiple station IDs in order until one works
-    # Verified Kathmandu station IDs (US Embassy is most reliable)
+    # Verified Kathmandu station IDs from AQICN
     candidates = [
-        "@7925",    # US Embassy Kathmandu (most reliable)
-        "@9534",    # Ratna Park
-        "@9535",    # Tribhuvan Airport  
-        "@10217",   # Bhaktapur
-        station_id,
+        "A517780",  # Ratnapark, Kathmandu-28
+        "A371611",  # Nepal Health Research Council, Kathmandu
+        "A543136",  # Kiran Chok, Kathmandu-04
+        "A348706",  # Kalanki, Kathmandu
+        "H9468",    # US Embassy Kathmandu
+        "A172975",  # Jhamsikhel, Lalitpur
     ]
     last_error = ""
     for sid in candidates:
