@@ -236,30 +236,37 @@ STATIONS = {
 # ── Data fetching ──────────────────────────────────────────────────────────────
 @st.cache_data(ttl=3600)
 def fetch_live_aqi(station_id, token=AQICN_TOKEN):
-    try:
-        r = requests.get(f"https://api.waqi.info/feed/{station_id}/?token={token}", timeout=6)
-        d = r.json()
-        if d.get("status") == "ok":
-            data = d["data"]
-            iaqi = data.get("iaqi", {})
-            return {
-                "aqi":     int(data["aqi"]),
-                "station": data["city"]["name"],
-                "time":    data["time"]["s"],
-                "pm25":    iaqi.get("pm25", {}).get("v"),
-                "pm10":    iaqi.get("pm10", {}).get("v"),
-                "no2":     iaqi.get("no2",  {}).get("v"),
-                "o3":      iaqi.get("o3",   {}).get("v"),
-                "co":      iaqi.get("co",   {}).get("v"),
-                "source":  "live",
-            }
-    except Exception:
-        pass
+    # Try multiple station IDs in order until one works
+    candidates = [station_id, "kathmandu", "@9534", "@11514", "nepal/kathmandu"]
+    last_error = ""
+    for sid in candidates:
+        try:
+            r = requests.get(f"https://api.waqi.info/feed/{sid}/?token={token}", timeout=8)
+            d = r.json()
+            if d.get("status") == "ok":
+                data = d["data"]
+                iaqi = data.get("iaqi", {})
+                return {
+                    "aqi":     int(data["aqi"]),
+                    "station": data["city"]["name"],
+                    "time":    data["time"]["s"],
+                    "pm25":    iaqi.get("pm25", {}).get("v"),
+                    "pm10":    iaqi.get("pm10", {}).get("v"),
+                    "no2":     iaqi.get("no2",  {}).get("v"),
+                    "o3":      iaqi.get("o3",   {}).get("v"),
+                    "co":      iaqi.get("co",   {}).get("v"),
+                    "source":  "live",
+                    "sid":     sid,
+                }
+            last_error = f"{sid}: {d.get('data','unknown error')}"
+        except Exception as e:
+            last_error = f"{sid}: {e}"
     return {
         "aqi": 145, "station": "Ratna Park, Kathmandu",
         "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "pm25": 89.0, "pm10": 142.0, "no2": 52.0, "o3": 38.0, "co": 1.8,
         "source": "simulated",
+        "error": last_error,
     }
 
 @st.cache_data(ttl=3600)
@@ -456,6 +463,10 @@ with st.expander("🔧 Debug info"):
     st.code(f"AQICN_TOKEN = '{AQICN_TOKEN[:6]}...' (len={len(AQICN_TOKEN)})")
     st.code(f"live source = {live['source']}")
     st.code(f"live station = {live['station']}")
+    if live.get("error"):
+        st.error(f"API error: {live['error']}")
+    if live.get("sid"):
+        st.success(f"Working station ID: {live['sid']}")
 
 # ── HEADER ─────────────────────────────────────────────────────────────────────
 col_h1, col_h2 = st.columns([3, 1])
